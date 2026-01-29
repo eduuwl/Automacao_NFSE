@@ -25,9 +25,24 @@ class AutomacaoNotaFiscal:
         options = webdriver.ChromeOptions()
         options.add_experimental_option("detach", True)
         
+        # Configurações para download automático de PDF
+        download_dir = os.path.join(os.getcwd(), "notas_pdf")
+        os.makedirs(download_dir, exist_ok=True)
+        
+        prefs = {
+            "download.default_directory": download_dir,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "plugins.always_open_pdf_externally": True,  # Baixa PDF ao invés de abrir
+            "safebrowsing.enabled": True
+        }
+        options.add_experimental_option("prefs", prefs)
+        
         self.driver = webdriver.Chrome(options=options)
         self.wait = WebDriverWait(self.driver, 15)
+        self.download_dir = download_dir
         print("✓ Navegador configurado")
+        print(f"ℹ PDFs serão salvos em: {download_dir}")
     
     def carregar_dados(self):
         """Carrega dados do Excel"""
@@ -98,6 +113,131 @@ class AutomacaoNotaFiscal:
             # Clica
             self.driver.execute_script("arguments[0].click();", btn)
             print(f"    ✓ Clicado")
+            
+            # Aguarda loading
+            self.aguardar_loading()
+            
+            # Aguarda dados carregarem
+            time.sleep(3)
+            
+            # Verifica se carregou
+            try:
+                # Busca campo nome
+                campo_nome = self.driver.find_element(By.XPATH, "//input[contains(@id, 'nomeEmpresarial') or contains(@id, 'nome')]")
+                nome = campo_nome.get_attribute('value')
+                
+                if nome and len(nome) > 3:
+                    print(f"    ✓ Dados carregados: {nome[:40]}...")
+                    
+                    # DEBUG: Verifica estado do dropdown
+                    try:
+                        dropdown = self.driver.find_element(By.ID, "formNotaFiscal:idAtividadeEmissor_input")
+                        is_disabled = dropdown.get_attribute('disabled')
+                        print(f"    ℹ Dropdown Atividade disabled={is_disabled}")
+                    except:
+                        print(f"    ⚠ Dropdown Atividade não encontrado ainda")
+                    
+                    return True
+                else:
+                    print(f"    ⚠ Nome vazio ({len(nome) if nome else 0} chars) - mas continuando...")
+                    return True
+            except Exception as e:
+                print(f"    ⚠ Não conseguiu verificar nome: {type(e).__name__}")
+                return True
+            
+        except Exception as e:
+            print(f"    ✗ Erro: {type(e).__name__}")
+            self.driver.save_screenshot("erro_cpf.png")
+            return False
+    
+    def cadastrar_tomador(self, dados):
+        """Cadastra tomador não cadastrado"""
+        try:
+            print(f"  → Tomador não cadastrado - iniciando cadastro...")
+            
+            # Aguarda modal "Tomador Não Cadastrado" aparecer
+            time.sleep(3)
+            
+            # Verifica se o modal está aberto
+            try:
+                modal_titulo = self.driver.find_element(By.XPATH, "//*[contains(text(), 'Tomador Não Cadastrado')]")
+                print(f"    ✓ Modal 'Tomador Não Cadastrado' detectado")
+            except:
+                print(f"    ⚠ Modal não detectado - pulando cadastro")
+                return True
+            
+            # 1. PREENCHE NOME
+            print(f"    → Preenchendo nome...")
+            campo_nome = self.driver.find_element(By.XPATH, 
+                "/html/body/div[6]/form/span/div/div/div[3]/div/div[1]/div[1]/input")
+            campo_nome.clear()
+            campo_nome.send_keys(dados.get('Nome', ''))
+            print(f"    ✓ Nome: {dados.get('Nome', '')[:30]}...")
+            time.sleep(1)
+            
+            # 2. PREENCHE APELIDO
+            print(f"    → Preenchendo apelido...")
+            campo_apelido = self.driver.find_element(By.XPATH,
+                "/html/body/div[6]/form/span/div/div/div[3]/div/div[1]/div[3]/input")
+            campo_apelido.clear()
+            campo_apelido.send_keys(dados.get('Apelido', ''))
+            print(f"    ✓ Apelido: {dados.get('Apelido', '')}")
+            time.sleep(1)
+            
+            # 3. PREENCHE CEP
+            print(f"    → Preenchendo CEP...")
+            cep = str(dados.get('CEP', '')).replace('-', '').replace('.', '')
+            campo_cep = self.driver.find_element(By.XPATH,
+                "/html/body/div[6]/form/span/div/div/div[3]/div/div[2]/div[1]/table/tbody/tr/td[1]/input")
+            campo_cep.clear()
+            campo_cep.send_keys(cep)
+            print(f"    ✓ CEP: {cep}")
+            time.sleep(1)
+            
+            # 4. CLICA NA LUPA (PESQUISAR CEP)
+            print(f"    → Clicando na lupa para pesquisar CEP...")
+            btn_lupa = self.driver.find_element(By.XPATH,
+                "/html/body/div[6]/form/span/div/div/div[3]/div/div[2]/div[1]/table/tbody/tr/td[2]/div/table/tbody/tr/td[3]/a/span")
+            btn_lupa.click()
+            print(f"    ✓ Lupa clicada - aguardando modal CEP...")
+            
+            # 5. AGUARDA MODAL CEP ABRIR (5-8 segundos)
+            time.sleep(7)
+            
+            # 6. CLICA EM "VOLTAR" NO MODAL CEP
+            print(f"    → Fechando modal CEP...")
+            btn_voltar = self.driver.find_element(By.XPATH,
+                "/html/body/div[15]/div/div/table/tbody/tr/td/a")
+            btn_voltar.click()
+            print(f"    ✓ Modal CEP fechado")
+            time.sleep(2)
+            
+            # 7. CLICA EM "GRAVAR" PARA SALVAR O TOMADOR
+            print(f"    → Gravando tomador...")
+            btn_gravar = self.driver.find_element(By.XPATH,
+                "/html/body/div[6]/form/span/div/div/div[4]/a[2]")
+            btn_gravar.click()
+            print(f"    ✓ Botão Gravar clicado")
+            
+            # Aguarda processamento
+            time.sleep(3)
+            self.aguardar_loading()
+            
+            print(f"    ✓ Tomador cadastrado com sucesso!")
+            return True
+            
+        except Exception as e:
+            print(f"    ✗ Erro ao cadastrar tomador: {type(e).__name__} - {str(e)[:100]}")
+            self.driver.save_screenshot("erro_cadastro_tomador.png")
+            
+            try:
+                with open("debug_cadastro_tomador.html", "w", encoding="utf-8") as f:
+                    f.write(self.driver.page_source)
+                print(f"    ℹ HTML salvo em: debug_cadastro_tomador.html")
+            except:
+                pass
+            
+            return False
             
             # Aguarda loading
             self.aguardar_loading()
@@ -667,6 +807,83 @@ class AutomacaoNotaFiscal:
             self.driver.save_screenshot("erro_emissao.png")
             return None
     
+    def baixar_pdf_nota(self, numero_sequencial):
+        """Baixa o PDF da nota fiscal emitida e renomeia"""
+        try:
+            print(f"  → Baixando PDF da nota...")
+            
+            # Aguarda um pouco para garantir que a nota foi emitida
+            time.sleep(2)
+            
+            # Procura botão/link de download do PDF
+            estrategias = [
+                # Por texto "PDF" ou "Imprimir"
+                "//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'pdf')]",
+                "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'pdf')]",
+                "//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'imprimir')]",
+                # Por ícone
+                "//a[.//i[contains(@class, 'pdf') or contains(@class, 'print') or contains(@class, 'file')]]",
+            ]
+            
+            btn_pdf = None
+            for xpath in estrategias:
+                try:
+                    elementos = self.driver.find_elements(By.XPATH, xpath)
+                    for elem in elementos:
+                        if elem.is_displayed():
+                            btn_pdf = elem
+                            print(f"    ✓ Botão PDF encontrado")
+                            break
+                    if btn_pdf:
+                        break
+                except:
+                    continue
+            
+            if btn_pdf:
+                # Verifica quantos arquivos já existem na pasta
+                arquivos_antes = set(os.listdir(self.download_dir))
+                
+                # Clica no botão de PDF
+                self.driver.execute_script("arguments[0].click();", btn_pdf)
+                print(f"    ✓ Download do PDF iniciado")
+                
+                # Aguarda download completar (máximo 30 segundos)
+                arquivo_baixado = None
+                for _ in range(30):
+                    time.sleep(1)
+                    arquivos_depois = set(os.listdir(self.download_dir))
+                    novos_arquivos = arquivos_depois - arquivos_antes
+                    
+                    # Filtra apenas PDFs completos (sem .crdownload)
+                    pdfs_novos = [f for f in novos_arquivos if f.endswith('.pdf') and not f.endswith('.crdownload')]
+                    
+                    if pdfs_novos:
+                        arquivo_baixado = pdfs_novos[0]
+                        break
+                
+                if arquivo_baixado:
+                    # Renomeia para nota_1.pdf, nota_2.pdf, etc
+                    caminho_antigo = os.path.join(self.download_dir, arquivo_baixado)
+                    caminho_novo = os.path.join(self.download_dir, f"nota_{numero_sequencial}.pdf")
+                    
+                    # Se já existir, remove
+                    if os.path.exists(caminho_novo):
+                        os.remove(caminho_novo)
+                    
+                    os.rename(caminho_antigo, caminho_novo)
+                    print(f"    ✓ PDF salvo como: nota_{numero_sequencial}.pdf")
+                    return True
+                else:
+                    print(f"    ⚠ Timeout ao aguardar download do PDF")
+                    return False
+            else:
+                print(f"    ⚠ Botão PDF não encontrado - pulando download")
+                return False
+                
+        except Exception as e:
+            print(f"    ⚠ Erro ao baixar PDF: {type(e).__name__} - {str(e)[:100]}")
+            return False
+    
     def limpar_formulario(self):
         """Limpa o formulário para próxima nota"""
         try:
@@ -706,6 +923,18 @@ class AutomacaoNotaFiscal:
             if not self.preencher_cpf_e_pesquisar(dados['CPF']):
                 return 'ERRO', '', 'Erro ao pesquisar CPF'
             
+            # 1.5. VERIFICA SE PRECISA CADASTRAR TOMADOR
+            # Verifica se apareceu o modal "Tomador Não Cadastrado"
+            time.sleep(2)
+            try:
+                modal_tomador = self.driver.find_element(By.XPATH, "//*[contains(text(), 'Tomador Não Cadastrado')]")
+                if modal_tomador.is_displayed():
+                    print(f"  ℹ Tomador não cadastrado - iniciando cadastro...")
+                    if not self.cadastrar_tomador(dados):
+                        return 'ERRO', '', 'Erro ao cadastrar tomador'
+            except:
+                print(f"  ℹ Tomador já cadastrado - continuando...")
+            
             # 2. Atividade
             if not self.selecionar_atividade():
                 return 'ERRO', '', 'Erro ao selecionar atividade'
@@ -723,6 +952,19 @@ class AutomacaoNotaFiscal:
             numero = self.emitir_nota()
             if not numero:
                 return 'ERRO', '', 'Erro ao emitir nota'
+            
+            # 5.5. Baixar PDF
+            self.baixar_pdf_nota(index + 1)  # nota_1.pdf, nota_2.pdf, etc
+            
+            # 6. Limpar para próxima
+            self.limpar_formulario()
+            
+            return 'EMITIDA', numero, ''
+            
+        except Exception as e:
+            erro_msg = f"{type(e).__name__}: {str(e)}"
+            print(f"  ✗ Erro inesperado: {erro_msg}")
+            return 'ERRO', '', erro_msg
             
             # 6. Limpar para próxima
             self.limpar_formulario()
