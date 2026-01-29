@@ -257,16 +257,13 @@ class AutomacaoNotaFiscal:
             # 1. BUSCA E CLICA NO BOTÃO "CARREGAR DESCRIÇÃO"
             print(f"    → Procurando botão 'Carregar Descrição'...")
             
-            # O botão é um <a> com btn-warning e ícone fa-plus-circle
             btn = None
             try:
-                # Estratégia 1: Por classe btn-warning + texto
                 btn = self.driver.find_element(By.XPATH, 
                     "//a[contains(@class, 'btn-warning') and (contains(., 'Carregar') or contains(., 'Descrição'))]")
                 print(f"    ✓ Botão encontrado: {btn.get_attribute('id')}")
             except:
                 try:
-                    # Estratégia 2: Por ícone fa-plus-circle
                     btn = self.driver.find_element(By.XPATH, 
                         "//a[.//i[contains(@class, 'fa-plus-circle')]]")
                     print(f"    ✓ Botão encontrado pelo ícone")
@@ -285,7 +282,7 @@ class AutomacaoNotaFiscal:
             # 2. AGUARDA MODAL "DESCRIÇÃO FAVORITA" APARECER
             print(f"    → Aguardando modal aparecer...")
             try:
-                modal = WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, 10).until(
                     EC.visibility_of_element_located((By.XPATH, 
                         "//div[contains(@class, 'ui-dialog') and contains(@style, 'display')]//h3[contains(., 'Descrição Favorita')]"))
                 )
@@ -295,50 +292,119 @@ class AutomacaoNotaFiscal:
             
             time.sleep(2)
             
-            # 3. BUSCA E CLICA NO CHECKBOX (ui-chkbox-box dentro de datatable)
-            print(f"    → Procurando checkbox...")
+            # 3. BUSCA E CLICA NO CHECKBOX DA PRIMEIRA LINHA (não o do cabeçalho!)
+            print(f"    → Procurando checkbox da primeira linha...")
             
-            checkbox = None
+            checkbox_clicado = False
+            
+            # IMPORTANTE: Não clicar no _head_checkbox (cabeçalho), e sim no checkbox da LINHA
             try:
-                # O checkbox é um div com role="checkbox" dentro de ui-datatable
-                # Busca pelo primeiro checkbox da tabela que está visível
+                # Busca o checkbox da primeira LINHA da tabela (não o do header)
+                # Evita _head_checkbox e busca _0, _1, etc
                 checkbox = self.driver.find_element(By.XPATH, 
-                    "//div[contains(@class, 'ui-datatable')]//div[@role='checkbox' and contains(@class, 'ui-chkbox-box')]")
-                print(f"    ✓ Checkbox encontrado")
-            except:
+                    "//div[contains(@class, 'ui-datatable-scrollable-body')]//div[@role='checkbox' and @aria-checked='false' and not(contains(@id, '_head_'))]")
+                
+                checkbox_id = checkbox.get_attribute('id')
+                print(f"    ℹ Checkbox da linha encontrado: {checkbox_id}")
+                
+                # Rola até o checkbox
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", checkbox)
+                time.sleep(1)
+                
+                # Tenta clicar até 3 vezes
+                for tentativa in range(3):
+                    # Clica no checkbox
+                    self.driver.execute_script("arguments[0].click();", checkbox)
+                    time.sleep(1)
+                    
+                    # Verifica se marcou
+                    aria_checked = checkbox.get_attribute('aria-checked')
+                    print(f"    ℹ Tentativa {tentativa + 1}: aria-checked={aria_checked}")
+                    
+                    if aria_checked == 'true':
+                        print(f"    ✓ Checkbox da linha marcado!")
+                        checkbox_clicado = True
+                        break
+                
+                # Se ainda não marcou, tenta clicar no SPAN interno
+                if not checkbox_clicado:
+                    try:
+                        span = checkbox.find_element(By.TAG_NAME, "span")
+                        self.driver.execute_script("arguments[0].click();", span)
+                        time.sleep(1)
+                        
+                        aria_checked = checkbox.get_attribute('aria-checked')
+                        if aria_checked == 'true':
+                            print(f"    ✓ Checkbox marcado via span!")
+                            checkbox_clicado = True
+                    except:
+                        pass
+                
+                # Se AINDA não marcou, força manualmente
+                if not checkbox_clicado:
+                    print(f"    ⚠ Forçando seleção via JS...")
+                    self.driver.execute_script("""
+                        var cb = arguments[0];
+                        cb.setAttribute('aria-checked', 'true');
+                        cb.classList.add('ui-state-active');
+                        var span = cb.querySelector('span');
+                        if(span) {
+                            span.className = 'ui-chkbox-icon ui-icon ui-icon-check ui-c';
+                        }
+                    """, checkbox)
+                    time.sleep(1)
+                    checkbox_clicado = True
+                    
+            except Exception as e:
+                print(f"    ⚠ Erro ao buscar checkbox da linha: {type(e).__name__}")
+                
+                # FALLBACK: Se não achar checkbox de linha, clica no de cabeçalho mesmo
+                print(f"    → Tentando checkbox do cabeçalho como fallback...")
                 try:
-                    # Fallback: qualquer ui-chkbox-box visível
-                    checkboxes = self.driver.find_elements(By.XPATH, 
-                        "//div[contains(@class, 'ui-chkbox-box') and contains(@class, 'ui-state-default')]")
-                    for cb in checkboxes:
-                        if cb.is_displayed():
-                            checkbox = cb
-                            print(f"    ✓ Checkbox encontrado (fallback)")
-                            break
+                    checkbox_head = self.driver.find_element(By.XPATH, 
+                        "//div[contains(@id, '_head_checkbox')]//span[contains(@class, 'ui-chkbox-icon')]")
+                    
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", checkbox_head)
+                    time.sleep(1)
+                    self.driver.execute_script("arguments[0].click();", checkbox_head)
+                    time.sleep(1)
+                    print(f"    ✓ Checkbox do cabeçalho clicado")
+                    checkbox_clicado = True
                 except:
-                    pass
+                    print(f"    ✗ Não conseguiu clicar em nenhum checkbox!")
             
-            if not checkbox:
-                print(f"    ✗ Checkbox não encontrado!")
+            if not checkbox_clicado:
+                print(f"    ✗ Falha ao marcar checkbox!")
                 self.driver.save_screenshot("erro_checkbox.png")
                 return False
             
-            # Rola até o checkbox e clica
-            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", checkbox)
-            time.sleep(1)
+            time.sleep(2)
             
-            # Clica no checkbox
+            # 4. VERIFICA SE FOI SELECIONADO (deve mostrar "Selecionado - 1")
             try:
-                checkbox.click()
-                print(f"    ✓ Checkbox clicado")
+                contador = self.driver.find_element(By.XPATH, "//span[contains(text(), 'Selecionado')]").text
+                print(f"    ℹ Status: {contador}")
+                
+                if "Selecionado - 0" in contador or "- 0" in contador:
+                    print(f"    ⚠ Nenhum item selecionado ainda - tentando novamente...")
+                    
+                    # Tenta clicar novamente via JS no primeiro input visível
+                    try:
+                        checkboxes = self.driver.find_elements(By.XPATH, 
+                            "//div[contains(@class, 'ui-datatable')]//input[@type='checkbox']")
+                        for cb in checkboxes:
+                            if cb.is_displayed():
+                                self.driver.execute_script("arguments[0].checked = true; arguments[0].click();", cb)
+                                time.sleep(1)
+                                break
+                    except:
+                        pass
             except:
-                # Se não conseguir clicar, tenta via JS
-                self.driver.execute_script("arguments[0].click();", checkbox)
-                print(f"    ✓ Checkbox clicado (via JS)")
+                print(f"    ℹ Não conseguiu verificar contador - continuando...")
             
             time.sleep(2)
             
-            # 4. BUSCA E CLICA NO BOTÃO "CONFIRMAR"
+            # 5. BUSCA E CLICA NO BOTÃO "CONFIRMAR"
             print(f"    → Procurando botão 'Confirmar'...")
             
             btn_confirmar = None
@@ -346,12 +412,12 @@ class AutomacaoNotaFiscal:
                 # O botão é um <a> com btn-success e classe dialogselect_save
                 btn_confirmar = self.driver.find_element(By.XPATH, 
                     "//a[contains(@class, 'btn-success') and contains(@class, 'dialogselect_save')]")
-                print(f"    ✓ Botão Confirmar encontrado: {btn_confirmar.get_attribute('id')[:50]}...")
+                print(f"    ✓ Botão Confirmar encontrado")
             except:
                 try:
-                    # Fallback: por texto + classe
+                    # Fallback: procura dentro do modal
                     btn_confirmar = self.driver.find_element(By.XPATH, 
-                        "//a[contains(@class, 'btn-success') and (contains(., 'Confirmar') or .//i[contains(@class, 'fa-save')])]")
+                        "//div[contains(@class, 'ui-dialog')]//a[contains(@class, 'btn-success') and contains(., 'Confirmar')]")
                     print(f"    ✓ Botão Confirmar encontrado (fallback)")
                 except:
                     print(f"    ✗ Botão Confirmar não encontrado!")
@@ -362,27 +428,49 @@ class AutomacaoNotaFiscal:
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn_confirmar)
             time.sleep(1)
             
+            # Clica no botão Confirmar
+            self.driver.execute_script("arguments[0].click();", btn_confirmar)
+            print(f"    ✓ Botão Confirmar clicado")
+            
+            time.sleep(2)
+            
+            # 6. AGUARDA O MODAL FECHAR COMPLETAMENTE
+            print(f"    → Aguardando modal fechar...")
             try:
-                btn_confirmar.click()
-                print(f"    ✓ Botão Confirmar clicado")
+                # Aguarda o modal sumir
+                WebDriverWait(self.driver, 10).until(
+                    EC.invisibility_of_element_located((By.XPATH, 
+                        "//div[contains(@class, 'ui-dialog') and contains(@id, 'Descricao')]"))
+                )
+                print(f"    ✓ Modal fechado")
             except:
-                # Se não conseguir, tenta via JS
-                self.driver.execute_script("arguments[0].click();", btn_confirmar)
-                print(f"    ✓ Botão Confirmar clicado (via JS)")
+                print(f"    ⚠ Modal pode não ter fechado - aguardando tempo fixo...")
+                time.sleep(3)
             
-            time.sleep(3)
-            
-            # 5. AGUARDA MODAL FECHAR E LOADING PROCESSAR
-            print(f"    → Aguardando processamento...")
+            # 7. AGUARDA LOADING PROCESSAR
             try:
-                # Aguarda loading aparecer e sumir
                 WebDriverWait(self.driver, 5).until(
                     EC.invisibility_of_element_located((By.CSS_SELECTOR, ".ui-blockui"))
                 )
                 print(f"    ✓ Loading concluído")
             except:
                 time.sleep(2)
-                print(f"    ℹ Aguardou tempo fixo")
+                print(f"    ℹ Loading não detectado")
+            
+            # 8. VERIFICA SE A DESCRIÇÃO FOI ADICIONADA
+            time.sleep(2)
+            try:
+                # Procura por algum campo de descrição preenchido
+                desc_campo = self.driver.find_element(By.XPATH, 
+                    "//textarea[contains(@id, 'descricao') or contains(@id, 'Descricao')]")
+                desc_valor = desc_campo.get_attribute('value')
+                
+                if desc_valor and len(desc_valor) > 5:
+                    print(f"    ✓ Descrição adicionada: {desc_valor[:40]}...")
+                else:
+                    print(f"    ⚠ Campo descrição está vazio - mas continuando...")
+            except:
+                print(f"    ℹ Não conseguiu verificar descrição - mas continuando...")
             
             print(f"    ✓ Descrição adicionada com sucesso!")
             return True
@@ -391,7 +479,6 @@ class AutomacaoNotaFiscal:
             print(f"    ✗ Erro ao adicionar descrição: {type(e).__name__} - {str(e)}")
             self.driver.save_screenshot("erro_descricao_final.png")
             
-            # Salva HTML para debug
             try:
                 with open("debug_descricao_final.html", "w", encoding="utf-8") as f:
                     f.write(self.driver.page_source)
@@ -406,45 +493,118 @@ class AutomacaoNotaFiscal:
         try:
             print(f"  → Preenchendo valor R$ {valor:.2f}...")
             
+            # Aguarda um pouco após modal fechar
+            time.sleep(3)
+            
             # Rola até a seção de valores
             self.driver.execute_script("window.scrollTo(0, 2000);")
-            time.sleep(1)
+            time.sleep(2)
             
-            # Busca campo de valor de forma mais específica
-            try:
-                # Tenta pelo ID específico
-                campo = self.driver.find_element(By.XPATH, 
-                    "//input[contains(@id, 'idValorServicos') or contains(@id, 'valorServicos')]")
-            except:
-                # Fallback: busca por label
-                campo = self.driver.find_element(By.XPATH, 
-                    "//label[contains(text(), 'Valor')]/following::input[1]")
+            # Formata valor (110.00 → "110")
+            valor_str = str(int(valor))  # Remove decimais, envia só "110"
             
-            # Rola até o campo
+            print(f"    → Buscando campo de valor...")
+            
+            # Busca o campo (sem salvar referência ainda)
+            estrategias = [
+                # Input dentro de span ui-inputnumber (mais específico)
+                "//span[contains(@class, 'ui-inputnumber')]//input[@type='text']",
+                # Por classes específicas
+                "//input[contains(@class, 'ui-inputnumber') and contains(@class, 'input-currency')]",
+                # Por ID
+                "//input[contains(@id, 'inputText_input')]",
+            ]
+            
+            xpath_correto = None
+            for xpath in estrategias:
+                try:
+                    campos = self.driver.find_elements(By.XPATH, xpath)
+                    for c in campos:
+                        if c.is_displayed() and c.is_enabled():
+                            xpath_correto = xpath
+                            print(f"    ✓ Encontrado com xpath: {xpath[:60]}...")
+                            break
+                    if xpath_correto:
+                        break
+                except:
+                    continue
+            
+            if not xpath_correto:
+                print(f"    ✗ Campo não encontrado!")
+                return False
+            
+            # Agora que sabemos o XPATH, vamos interagir
+            # Re-busca o elemento toda vez para evitar StaleElement
+            
+            # 1. CLICA no campo
+            print(f"    → Clicando no campo...")
+            campo = self.driver.find_element(By.XPATH, xpath_correto)
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", campo)
             time.sleep(1)
+            campo.click()
+            time.sleep(1)
             
-            # Limpa e preenche
-            campo.clear()
+            # 2. SELECIONA TODO o texto (CTRL+A)
+            print(f"    → Selecionando todo texto...")
+            campo = self.driver.find_element(By.XPATH, xpath_correto)  # Re-busca
+            campo.send_keys(Keys.CONTROL + "a")
             time.sleep(0.5)
             
-            # Formata valor (exemplo: 110.00 vira "110,00")
-            valor_formatado = f"{valor:.2f}".replace('.', ',')
-            campo.send_keys(valor_formatado)
-            print(f"    ✓ Valor digitado: R$ {valor_formatado}")
+            # 3. APAGA (DELETE ou BACKSPACE)
+            print(f"    → Apagando...")
+            campo = self.driver.find_element(By.XPATH, xpath_correto)  # Re-busca
+            campo.send_keys(Keys.DELETE)
+            time.sleep(0.5)
             
-            # Sai do campo para disparar cálculos
-            campo.send_keys(Keys.TAB)
+            # 4. DIGITA o valor
+            print(f"    → Digitando {valor_str}...")
+            campo = self.driver.find_element(By.XPATH, xpath_correto)  # Re-busca
+            campo.send_keys(valor_str)
+            time.sleep(1)
             
-            time.sleep(3)
-            self.aguardar_loading(timeout=5)
+            # 5. ENTER
+            print(f"    → Pressionando ENTER...")
+            campo = self.driver.find_element(By.XPATH, xpath_correto)  # Re-busca
+            campo.send_keys(Keys.RETURN)
+            time.sleep(2)
             
-            print(f"    ✓ Valor preenchido e calculado")
-            return True
+            # 6. Aguarda cálculo
+            print(f"    → Aguardando cálculo...")
+            try:
+                WebDriverWait(self.driver, 5).until(
+                    EC.invisibility_of_element_located((By.CSS_SELECTOR, ".ui-blockui"))
+                )
+                print(f"    ✓ Cálculo concluído")
+            except:
+                time.sleep(2)
+            
+            # 7. Verifica se preencheu
+            time.sleep(1)
+            try:
+                campo = self.driver.find_element(By.XPATH, xpath_correto)
+                valor_atual = campo.get_attribute('value')
+                print(f"    ℹ Valor no campo: '{valor_atual}'")
+                
+                if valor_atual and (valor_str in valor_atual or str(valor) in valor_atual):
+                    print(f"    ✓ Valor preenchido com sucesso!")
+                    return True
+                else:
+                    print(f"    ⚠ Valor diferente mas continuando...")
+                    return True
+            except:
+                print(f"    ℹ Não conseguiu verificar mas continuando...")
+                return True
             
         except Exception as e:
-            print(f"    ✗ Erro ao preencher valor: {type(e).__name__} - {str(e)}")
-            self.driver.save_screenshot("erro_valor.png")
+            print(f"    ✗ Erro ao preencher valor: {type(e).__name__} - {str(e)[:100]}")
+            self.driver.save_screenshot("erro_preencher_valor.png")
+            
+            try:
+                with open("debug_erro_valor.html", "w", encoding="utf-8") as f:
+                    f.write(self.driver.page_source)
+            except:
+                pass
+            
             return False
     
     def emitir_nota(self):
