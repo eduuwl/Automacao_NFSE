@@ -223,6 +223,26 @@ class AutomacaoNotaFiscal:
             time.sleep(3)
             self.aguardar_loading()
             
+            # 8. FECHA O MODAL DE SUCESSO "Procedimento Realizado com Sucesso"
+            print(f"    → Fechando modal de sucesso...")
+            time.sleep(2)
+            
+            try:
+                # Busca o botão OK do modal de sucesso
+                btn_ok = self.driver.find_element(By.XPATH,
+                    "/html/body/div[21]/div/div[3]/div/button")
+                
+                # OU busca pela classe
+                if not btn_ok:
+                    btn_ok = self.driver.find_element(By.CSS_SELECTOR, 
+                        "button.swal-button.swal-button--confirm")
+                
+                btn_ok.click()
+                print(f"    ✓ Modal de sucesso fechado")
+                time.sleep(2)
+            except:
+                print(f"    ⚠ Modal de sucesso não encontrado - continuando...")
+            
             print(f"    ✓ Tomador cadastrado com sucesso!")
             return True
             
@@ -810,10 +830,13 @@ class AutomacaoNotaFiscal:
     def baixar_pdf_nota(self, numero_sequencial):
         """Baixa o PDF da nota fiscal emitida e renomeia"""
         try:
-            print(f"  → Baixando PDF da nota...")
+            print(f"  → Aguardando nota ser processada...")
             
-            # Aguarda um pouco para garantir que a nota foi emitida
-            time.sleep(2)
+            # AGUARDA 10 SEGUNDOS para garantir que a nota foi totalmente processada
+            # e o botão de PDF está disponível
+            time.sleep(10)
+            
+            print(f"  → Baixando PDF da nota...")
             
             # Procura botão/link de download do PDF
             estrategias = [
