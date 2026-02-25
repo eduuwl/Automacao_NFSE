@@ -151,14 +151,11 @@ class AutomacaoNotaFiscal:
             return False
     
     def cadastrar_tomador(self, dados):
-        """Cadastra tomador não cadastrado"""
+        """Cadastra tomador não cadastrado - ATUALIZADO v40 com novos XPaths"""
         try:
             print(f"  → Tomador não cadastrado - iniciando cadastro...")
-            
-            # Aguarda modal "Tomador Não Cadastrado" aparecer
             time.sleep(3)
             
-            # Verifica se o modal está aberto
             try:
                 modal_titulo = self.driver.find_element(By.XPATH, "//*[contains(text(), 'Tomador Não Cadastrado')]")
                 print(f"    ✓ Modal 'Tomador Não Cadastrado' detectado")
@@ -166,94 +163,98 @@ class AutomacaoNotaFiscal:
                 print(f"    ⚠ Modal não detectado - pulando cadastro")
                 return True
             
-            # 1. PREENCHE NOME
+            # ATUALIZADO v40: Nome/Nome Empresarial (div[5])
             print(f"    → Preenchendo nome...")
             campo_nome = self.driver.find_element(By.XPATH, 
-                "/html/body/div[6]/form/span/div/div/div[3]/div/div[1]/div[1]/input")
+                "/html/body/div[5]/form/span/div/div/div[3]/div/div[1]/div[1]/input")
             campo_nome.clear()
             campo_nome.send_keys(dados.get('Nome', ''))
             print(f"    ✓ Nome: {dados.get('Nome', '')[:30]}...")
             time.sleep(1)
             
-            # 2. PREENCHE APELIDO
+            # ATUALIZADO v40: Apelido (div[5])
             print(f"    → Preenchendo apelido...")
             campo_apelido = self.driver.find_element(By.XPATH,
-                "/html/body/div[6]/form/span/div/div/div[3]/div/div[1]/div[3]/input")
+                "/html/body/div[5]/form/span/div/div/div[3]/div/div[1]/div[3]/input")
             campo_apelido.clear()
             campo_apelido.send_keys(dados.get('Apelido', ''))
             print(f"    ✓ Apelido: {dados.get('Apelido', '')}")
             time.sleep(1)
             
-            # 3. PREENCHE CEP
+            # ATUALIZADO v40: CEP (div[5])
             print(f"    → Preenchendo CEP...")
             cep = str(dados.get('CEP', '')).replace('-', '').replace('.', '')
             campo_cep = self.driver.find_element(By.XPATH,
-                "/html/body/div[6]/form/span/div/div/div[3]/div/div[2]/div[1]/table/tbody/tr/td[1]/input")
+                "/html/body/div[5]/form/span/div/div/div[3]/div/div[2]/div[1]/table/tbody/tr/td[1]/input")
             campo_cep.clear()
             campo_cep.send_keys(cep)
             print(f"    ✓ CEP: {cep}")
             time.sleep(1)
             
-            # 4. CLICA NA LUPA (PESQUISAR CEP)
-            print(f"    → Clicando na lupa para pesquisar CEP...")
+            # ATUALIZADO v40: Lupa 🔍 (div[5])
+            print(f"    → Clicando na lupa 🔍 para pesquisar CEP...")
             btn_lupa = self.driver.find_element(By.XPATH,
-                "/html/body/div[6]/form/span/div/div/div[3]/div/div[2]/div[1]/table/tbody/tr/td[2]/div/table/tbody/tr/td[3]/a/span")
+                "/html/body/div[5]/form/span/div/div/div[3]/div/div[2]/div[1]/table/tbody/tr/td[2]/div/table/tbody/tr/td[3]/a/span")
             btn_lupa.click()
             print(f"    ✓ Lupa clicada - aguardando modal CEP...")
-            
-            # 5. AGUARDA MODAL CEP ABRIR (5-8 segundos)
             time.sleep(7)
             
-            # 6. CLICA EM "VOLTAR" NO MODAL CEP
+            # ATUALIZADO v40: Botão Voltar do modal CEP (div[13])
             print(f"    → Fechando modal CEP...")
             btn_voltar = self.driver.find_element(By.XPATH,
-                "/html/body/div[15]/div/div/table/tbody/tr/td/a")
+                "/html/body/div[13]/div/div/table/tbody/tr/td/a")
             btn_voltar.click()
             print(f"    ✓ Modal CEP fechado")
             time.sleep(2)
             
-            # 7. CLICA EM "GRAVAR" PARA SALVAR O TOMADOR
+            # ATUALIZADO v40: Botão Gravar (div[5])
             print(f"    → Gravando tomador...")
             btn_gravar = self.driver.find_element(By.XPATH,
-                "/html/body/div[6]/form/span/div/div/div[4]/a[2]")
+                "/html/body/div[5]/form/span/div/div/div[4]/a[2]")
             btn_gravar.click()
             print(f"    ✓ Botão Gravar clicado")
             
-            # Aguarda processamento
-            time.sleep(3)
-            self.aguardar_loading()
+            # ATUALIZADO v40: Aguarda 5 segundos após gravar
+            print(f"    → Aguardando 5s para modal de sucesso...")
+            time.sleep(5)
             
-            # 8. FECHA O MODAL DE SUCESSO "Procedimento Realizado com Sucesso"
-            print(f"    → Fechando modal de sucesso...")
-            time.sleep(2)
-            
+            # ATUALIZADO v40: Clica no OK do modal de sucesso (div[20])
+            print(f"    → Procurando botão OK do modal de sucesso...")
             try:
-                # Busca o botão OK do modal de sucesso
-                btn_ok = self.driver.find_element(By.XPATH,
-                    "/html/body/div[21]/div/div[3]/div/button")
+                # Aguarda o botão OK aparecer (XPATH atualizado: div[20])
+                btn_ok = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "/html/body/div[20]/div/div[3]/div/button"))
+                )
+                print(f"    ✓ Modal de sucesso detectado")
                 
-                # OU busca pela classe
-                if not btn_ok:
-                    btn_ok = self.driver.find_element(By.CSS_SELECTOR, 
-                        "button.swal-button.swal-button--confirm")
-                
+                # Clica no OK
                 btn_ok.click()
-                print(f"    ✓ Modal de sucesso fechado")
+                print(f"    ✓ Botão OK clicado")
                 time.sleep(2)
-            except:
-                print(f"    ⚠ Modal de sucesso não encontrado - continuando...")
+                
+            except Exception as e:
+                print(f"    ⚠ Modal OK não detectado: {type(e).__name__}")
+                # Fallback: tenta via CSS selector
+                try:
+                    btn_ok_alt = self.driver.find_element(By.CSS_SELECTOR, "button.swal-button.swal-button--confirm")
+                    btn_ok_alt.click()
+                    print(f"    ✓ Botão OK clicado (fallback CSS)")
+                    time.sleep(2)
+                except:
+                    print(f"    ℹ Continuando sem clicar no OK...")
             
             print(f"    ✓ Tomador cadastrado com sucesso!")
             return True
             
         except Exception as e:
             print(f"    ✗ Erro ao cadastrar tomador: {type(e).__name__} - {str(e)[:100]}")
-            self.driver.save_screenshot("erro_cadastro_tomador.png")
+            self.driver.save_screenshot("erro_cadastro_tomador_v40.png")
             
+            # Salva HTML para debug
             try:
-                with open("debug_cadastro_tomador.html", "w", encoding="utf-8") as f:
+                with open("debug_cadastro_tomador_v40.html", "w", encoding="utf-8") as f:
                     f.write(self.driver.page_source)
-                print(f"    ℹ HTML salvo em: debug_cadastro_tomador.html")
+                print(f"    ℹ HTML salvo em: debug_cadastro_tomador_v40.html")
             except:
                 pass
             
